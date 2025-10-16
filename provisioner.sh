@@ -105,7 +105,7 @@ fi
 
 echo ""
 echo -e "${GREEN}╔════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║           Next.js App Provisioner v5                       ║${NC}"
+echo -e "${GREEN}║           Next.js App Provisioner                          ║${NC}"
 echo -e "${GREEN}╚════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -220,7 +220,7 @@ if [ "$MODE" = "prod" ]; then
 
     # Nginx config (backgrounded)
     (
-        sudo cp /etc/nginx/base.config /etc/nginx/sites-enabled/"$APP_NAME".$DEFAULT_DOMAIN
+        sudo cp "$SCRIPT_DIR/base.config" /etc/nginx/sites-enabled/"$APP_NAME".$DEFAULT_DOMAIN
         sudo sed -i "s/{appName}/$APP_NAME/g" /etc/nginx/sites-enabled/"$APP_NAME".$DEFAULT_DOMAIN
         sudo sed -i "s/{appPort}/$APP_PORT/g" /etc/nginx/sites-enabled/"$APP_NAME".$DEFAULT_DOMAIN
         sudo sed -i "s/{SERVER_PUBLIC_IP}/$SERVER_PUBLIC_IP/g" /etc/nginx/sites-enabled/"$APP_NAME".$DEFAULT_DOMAIN
@@ -236,7 +236,7 @@ if [ "$MODE" = "prod" ]; then
 else
     status "Skipping build (dev mode) - preparing nginx configuration..."
 
-    sudo cp /etc/nginx/base.config /etc/nginx/sites-enabled/"$APP_NAME".$DEFAULT_DOMAIN
+    sudo cp "$SCRIPT_DIR/base.config" /etc/nginx/sites-enabled/"$APP_NAME".$DEFAULT_DOMAIN
     sudo sed -i "s/{appName}/$APP_NAME/g" /etc/nginx/sites-enabled/"$APP_NAME".$DEFAULT_DOMAIN
     sudo sed -i "s/{appPort}/$APP_PORT/g" /etc/nginx/sites-enabled/"$APP_NAME".$DEFAULT_DOMAIN
     sudo sed -i "s/{SERVER_PUBLIC_IP}/$SERVER_PUBLIC_IP/g" /etc/nginx/sites-enabled/"$APP_NAME".$DEFAULT_DOMAIN

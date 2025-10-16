@@ -1,6 +1,9 @@
 # Environment variables (contains sensitive credentials)
 .env
 
+# Backup scripts
+bkups/
+
 # Node modules (if any)
 node_modules/
 

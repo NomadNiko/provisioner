@@ -45,7 +45,7 @@ sudo certbot register --email your@email.com
 ```
 
 **Nginx Template:**
-Create `/etc/nginx/base.config` with placeholders: `{appName}`, `{appPort}`, `{SERVER_PUBLIC_IP}`
+The repository includes `base.config` with placeholders: `{appName}`, `{appPort}`, `{SERVER_PUBLIC_IP}`
 
 ## Configuration
 
@@ -84,16 +84,16 @@ Create `/etc/nginx/base.config` with placeholders: `{appName}`, `{appPort}`, `{S
 
 ## Usage
 
-### 1. Provision New App (`provisioner-v5.sh`)
+### 1. Provision New App (`provisioner.sh`)
 
 **Basic (scaffold only):**
 ```bash
-./provisioner-v5.sh -n "my-app"
+./provisioner.sh -n "my-app"
 ```
 
 **With Claude customization:**
 ```bash
-./provisioner-v5.sh -n "my-app" -d "a portfolio site for a developer"
+./provisioner.sh -n "my-app" -d "a portfolio site for a developer"
 ```
 
 **Options:**
@@ -106,13 +106,13 @@ Create `/etc/nginx/base.config` with placeholders: `{appName}`, `{appPort}`, `{S
 **Examples:**
 ```bash
 # Production with Claude Sonnet
-./provisioner-v5.sh -n "portfolio" -d "creative portfolio" -c "sonnet"
+./provisioner.sh -n "portfolio" -d "creative portfolio" -c "sonnet"
 
 # Development mode (hot reload, no build)
-./provisioner-v5.sh -n "test-app" -m "dev"
+./provisioner.sh -n "test-app" -m "dev"
 
 # From template
-./provisioner-v5.sh -n "blog" -t "nextjs-spark" -d "personal blog"
+./provisioner.sh -n "blog" -t "nextjs-spark" -d "personal blog"
 ```
 
 **Creates:**
@@ -188,11 +188,13 @@ Create `/etc/nginx/base.config` with placeholders: `{appName}`, `{appPort}`, `{S
 
 ```
 /opt/provisioner/
-├── provisioner-v5.sh    # Main provisioning script
+├── provisioner.sh       # Main provisioning script
 ├── site-update.sh       # Update existing apps
 ├── unprovision.sh       # Remove apps
+├── base.config          # Nginx template
 ├── .env                 # Configuration (gitignored)
 ├── .env.example         # Template
+├── bkups/               # Old script versions (gitignored)
 ├── data/
 │   └── uuid.json        # Session UUID storage
 └── templates/           # Custom Next.js templates
