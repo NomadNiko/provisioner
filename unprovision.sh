@@ -227,6 +227,16 @@ else
     warning "No application directory found"
 fi
 
+# Step 5.5: Remove UUID from data store
+UUID_DATA_FILE="$SCRIPT_DIR/data/uuid.json"
+if [ -f "$UUID_DATA_FILE" ]; then
+    if jq -e --arg app "$APP_NAME" 'has($app)' "$UUID_DATA_FILE" >/dev/null 2>&1; then
+        status "Removing UUID from data store..."
+        jq --arg app "$APP_NAME" 'del(.[$app])' "$UUID_DATA_FILE" > "$UUID_DATA_FILE.tmp" && mv "$UUID_DATA_FILE.tmp" "$UUID_DATA_FILE"
+        success "UUID removed from data store"
+    fi
+fi
+
 # Step 6: Delete GitHub repository (if confirmed)
 if [ "$SKIP_GITHUB" = true ]; then
     warning "GitHub repository deletion skipped (-g flag)"

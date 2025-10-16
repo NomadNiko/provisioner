@@ -140,6 +140,16 @@ success "Assigned port: $APP_PORT"
 UNIQUE_SESSION_UUID=$(cat /proc/sys/kernel/random/uuid)
 status "Generated session UUID: $UNIQUE_SESSION_UUID"
 
+# Store UUID in data file
+UUID_DATA_FILE="$SCRIPT_DIR/data/uuid.json"
+if [ ! -f "$UUID_DATA_FILE" ]; then
+    echo "{}" > "$UUID_DATA_FILE"
+fi
+
+# Add or update the app's UUID using jq
+jq --arg app "$APP_NAME" --arg uuid "$UNIQUE_SESSION_UUID" '.[$app] = $uuid' "$UUID_DATA_FILE" > "$UUID_DATA_FILE.tmp" && mv "$UUID_DATA_FILE.tmp" "$UUID_DATA_FILE"
+status "UUID saved to data store"
+
 # Step 2: Create Cloudflare DNS record FIRST (gives it time to propagate)
 status "Creating Cloudflare DNS record (early for propagation time)..."
 curl -X POST https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/dns_records \
