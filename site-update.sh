@@ -139,7 +139,7 @@ claude -p "$PROMPT" \
     --model "$CLAUDE_MODEL_ID" \
     --resume "$SESSION_UUID" \
     --dangerously-skip-permissions \
-    --output-format=json
+    --output-format=json < /dev/null
 
 CLAUDE_EXIT_CODE=$?
 CLAUDE_END=$(date +%s)

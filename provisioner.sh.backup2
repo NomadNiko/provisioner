@@ -70,27 +70,24 @@ run_certbot_with_retry() {
 TEMPLATE="new"           # Default template
 MODE="prod"              # Default mode
 CLAUDE_MODEL_CHOICE="haiku"  # Default Claude model
-OPERATION_TYPE="landing" # Default operation type
-while getopts "n:d:t:m:c:o:" opt; do
+while getopts "n:d:t:m:c:" opt; do
   case $opt in
     n) APP_NAME="$OPTARG" ;;
     d) APP_DESCRIPTION="$OPTARG" ;;
     t) TEMPLATE="$OPTARG" ;;
     m) MODE="$OPTARG" ;;
     c) CLAUDE_MODEL_CHOICE="$OPTARG" ;;
-    o) OPERATION_TYPE="$OPTARG" ;;
   esac
 done
 
 # Validate required arguments
 if [ -z "$APP_NAME" ]; then
-    error "Usage: $0 -n <app_name> [-d <app_description>] [-t <template>] [-m <mode>] [-c <claude_model>] [-o <operation_type>]"
+    error "Usage: $0 -n <app_name> [-d <app_description>] [-t <template>] [-m <mode>] [-c <claude_model>]"
     echo "  -n <app_name>        : Application name (required)"
     echo "  -d <app_description> : Description for Claude AI customization (optional)"
     echo "  -t <template>        : Template name (default: 'new')"
     echo "  -m <mode>            : Mode - 'prod' or 'dev' (default: 'prod')"
     echo "  -c <claude_model>    : Claude model - 'haiku', 'sonnet', or 'opus' (default: 'haiku')"
-    echo "  -o <operation_type>  : Operation type - 'landing' or 'full' (default: 'landing')"
     exit 1
 fi
 
@@ -103,12 +100,6 @@ fi
 # Validate Claude model choice (validation of actual ID happens after .env is loaded)
 if [ "$CLAUDE_MODEL_CHOICE" != "haiku" ] && [ "$CLAUDE_MODEL_CHOICE" != "sonnet" ] && [ "$CLAUDE_MODEL_CHOICE" != "opus" ]; then
     error "Invalid Claude model: $CLAUDE_MODEL_CHOICE. Must be 'haiku', 'sonnet', or 'opus'"
-    exit 1
-fi
-
-# Validate operation type
-if [ "$OPERATION_TYPE" != "landing" ] && [ "$OPERATION_TYPE" != "full" ]; then
-    error "Invalid operation type: $OPERATION_TYPE. Must be 'landing' or 'full'"
     exit 1
 fi
 
@@ -281,21 +272,14 @@ success "Nginx restarted with SSL"
 # Step 12: Run Claude AI customization (only if description provided)
 if [ -n "$APP_DESCRIPTION" ]; then
     status "Running Claude AI customization with $CLAUDE_MODEL_CHOICE (this may take 2-5 minutes)..."
-
-    # Determine the prompt based on operation type
-    if [ "$OPERATION_TYPE" = "landing" ]; then
-        echo -e "${YELLOW}   Claude is now designing and implementing your landing page...${NC}"
-        CLAUDE_PROMPT="Transform this Next.js site into a professional landing page for '$APP_NAME' which is: $APP_DESCRIPTION. Customize the content, design, and copy to match this purpose. Run 'npm run lint' to verify code quality, but DO NOT run 'npm run build' as that will be done separately."
-    elif [ "$OPERATION_TYPE" = "full" ]; then
-        echo -e "${YELLOW}   Claude is now building a full-stack application with authentication...${NC}"
-        CLAUDE_PROMPT="Build a full stack application, including JWT auth, for app named $APP_NAME. A short description: $APP_DESCRIPTION. Iterate. Do not stop, as this is a one shot. You need to test lint as ts checks as you go. You have full permission to install any packages you need, but do not stop. Continue iterating in this single prompt until you have working MVP. You CANNOT stop without a working template for the client to see. Ultrathink. Create a list of to-do's at a high level then work through them, expanding them as you go. Finish with one final build."
-    fi
+    echo -e "${YELLOW}   Claude is now designing and implementing your landing page...${NC}"
 
     # Log the exact command that will be run
+    CLAUDE_PROMPT="Please configure this base site to be a landing page for $APP_NAME an $APP_DESCRIPTION. Run 'npm run lint' and type checking to verify everything works, but DO NOT run 'npm run build' as that will be done separately after. Just ensure the code is correct and lint passes."
+
     echo "[DEBUG] About to execute Claude with:"
     echo "[DEBUG]   Model: $CLAUDE_MODEL_ID"
     echo "[DEBUG]   Session ID: $UNIQUE_SESSION_UUID"
-    echo "[DEBUG]   Operation Type: $OPERATION_TYPE"
     echo "[DEBUG]   Prompt: $CLAUDE_PROMPT"
     echo "[DEBUG]   Working Directory: $(pwd)"
     echo "[DEBUG] Claude command executing (output will stream below)..."
@@ -304,12 +288,11 @@ if [ -n "$APP_DESCRIPTION" ]; then
 
     # Run Claude and let output stream through (don't capture it)
     # This allows real-time monitoring of Claude's progress
-    # Redirect stdin to /dev/null to prevent hanging when called from Node.js
     claude -p "$CLAUDE_PROMPT" \
         --model "$CLAUDE_MODEL_ID" \
         --session-id "$UNIQUE_SESSION_UUID" \
         --dangerously-skip-permissions \
-        --output-format=json < /dev/null
+        --output-format=json
     CLAUDE_EXIT_CODE=$?
 
     CLAUDE_END=$(date +%s)
