@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+@theme {
+    --font-sans: 'Inter', sans-serif;
+}
+
+body {
+    @apply bg-white text-gray-900 text-sm antialiased;
+}
+
+button {
+    @apply cursor-pointer;
+}

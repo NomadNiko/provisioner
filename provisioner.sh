@@ -69,46 +69,26 @@ run_certbot_with_retry() {
 # Parse arguments
 TEMPLATE="new"           # Default template
 MODE="prod"              # Default mode
-CLAUDE_MODEL_CHOICE="haiku"  # Default Claude model
-OPERATION_TYPE="landing" # Default operation type
-while getopts "n:d:t:m:c:o:" opt; do
+while getopts "n:t:m:" opt; do
   case $opt in
     n) APP_NAME="$OPTARG" ;;
-    d) APP_DESCRIPTION="$OPTARG" ;;
     t) TEMPLATE="$OPTARG" ;;
     m) MODE="$OPTARG" ;;
-    c) CLAUDE_MODEL_CHOICE="$OPTARG" ;;
-    o) OPERATION_TYPE="$OPTARG" ;;
   esac
 done
 
 # Validate required arguments
 if [ -z "$APP_NAME" ]; then
-    error "Usage: $0 -n <app_name> [-d <app_description>] [-t <template>] [-m <mode>] [-c <claude_model>] [-o <operation_type>]"
-    echo "  -n <app_name>        : Application name (required)"
-    echo "  -d <app_description> : Description for Claude AI customization (optional)"
-    echo "  -t <template>        : Template name (default: 'new')"
-    echo "  -m <mode>            : Mode - 'prod' or 'dev' (default: 'prod')"
-    echo "  -c <claude_model>    : Claude model - 'haiku', 'sonnet', or 'opus' (default: 'haiku')"
-    echo "  -o <operation_type>  : Operation type - 'landing' or 'full' (default: 'landing')"
+    error "Usage: $0 -n <app_name> [-t <template>] [-m <mode>]"
+    echo "  -n <app_name> : Application name (required)"
+    echo "  -t <template> : Template name (default: 'new')"
+    echo "  -m <mode>     : Mode - 'prod' or 'dev' (default: 'prod')"
     exit 1
 fi
 
 # Validate mode
 if [ "$MODE" != "prod" ] && [ "$MODE" != "dev" ]; then
     error "Invalid mode: $MODE. Must be 'prod' or 'dev'"
-    exit 1
-fi
-
-# Validate Claude model choice (validation of actual ID happens after .env is loaded)
-if [ "$CLAUDE_MODEL_CHOICE" != "haiku" ] && [ "$CLAUDE_MODEL_CHOICE" != "sonnet" ] && [ "$CLAUDE_MODEL_CHOICE" != "opus" ]; then
-    error "Invalid Claude model: $CLAUDE_MODEL_CHOICE. Must be 'haiku', 'sonnet', or 'opus'"
-    exit 1
-fi
-
-# Validate operation type
-if [ "$OPERATION_TYPE" != "landing" ] && [ "$OPERATION_TYPE" != "full" ]; then
-    error "Invalid operation type: $OPERATION_TYPE. Must be 'landing' or 'full'"
     exit 1
 fi
 
@@ -120,44 +100,17 @@ echo ""
 
 # Show mode
 MODE_DISPLAY=$([ "$MODE" = "dev" ] && echo "DEV MODE" || echo "PRODUCTION MODE")
-CLAUDE_DISPLAY=$([ -z "$APP_DESCRIPTION" ] && echo "No Claude" || echo "WITH Claude AI")
-status "Starting provisioning for: $APP_NAME (template: $TEMPLATE) [$MODE_DISPLAY - $CLAUDE_DISPLAY]"
+status "Starting provisioning for: $APP_NAME (template: $TEMPLATE) [$MODE_DISPLAY]"
 echo ""
 
 # Load .env file
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/.env"
 
-# Map Claude model choice to model ID from .env
-case "$CLAUDE_MODEL_CHOICE" in
-    haiku)
-        CLAUDE_MODEL_ID="$CLAUDE_MODEL_HAIKU"
-        ;;
-    sonnet)
-        CLAUDE_MODEL_ID="$CLAUDE_MODEL_SONNET"
-        ;;
-    opus)
-        CLAUDE_MODEL_ID="$CLAUDE_MODEL_OPUS"
-        ;;
-esac
-
-# Step 1: Find available port and generate UUID early
+# Step 1: Find available port
 status "Finding available port..."
 APP_PORT=$(for port in {27032..65535}; do ss -tuln | grep -q ":$port " || { echo $port; break; }; done)
 success "Assigned port: $APP_PORT"
-
-UNIQUE_SESSION_UUID=$(cat /proc/sys/kernel/random/uuid)
-status "Generated session UUID: $UNIQUE_SESSION_UUID"
-
-# Store UUID in data file
-UUID_DATA_FILE="$SCRIPT_DIR/data/uuid.json"
-if [ ! -f "$UUID_DATA_FILE" ]; then
-    echo "{}" > "$UUID_DATA_FILE"
-fi
-
-# Add or update the app's UUID using jq
-jq --arg app "$APP_NAME" --arg uuid "$UNIQUE_SESSION_UUID" '.[$app] = $uuid' "$UUID_DATA_FILE" > "$UUID_DATA_FILE.tmp" && mv "$UUID_DATA_FILE.tmp" "$UUID_DATA_FILE"
-status "UUID saved to data store"
 
 # Step 2: Create Cloudflare DNS record FIRST (gives it time to propagate)
 status "Creating Cloudflare DNS record (early for propagation time)..."
@@ -278,72 +231,6 @@ status "Restarting nginx with SSL configuration..."
 sudo nginx -t && sudo systemctl restart nginx
 success "Nginx restarted with SSL"
 
-# Step 12: Run Claude AI customization (only if description provided)
-if [ -n "$APP_DESCRIPTION" ]; then
-    status "Running Claude AI customization with $CLAUDE_MODEL_CHOICE (this may take 2-5 minutes)..."
-
-    # Determine the prompt based on operation type
-    if [ "$OPERATION_TYPE" = "landing" ]; then
-        echo -e "${YELLOW}   Claude is now designing and implementing your landing page...${NC}"
-        CLAUDE_PROMPT="Transform this Next.js site into a professional landing page for '$APP_NAME' which is: $APP_DESCRIPTION. Customize the content, design, and copy to match this purpose. Run 'npm run lint' to verify code quality, but DO NOT run 'npm run build' as that will be done separately."
-    elif [ "$OPERATION_TYPE" = "full" ]; then
-        echo -e "${YELLOW}   Claude is now building a full-stack application with authentication...${NC}"
-        CLAUDE_PROMPT="Build a full stack application, including JWT auth, for app named $APP_NAME. A short description: $APP_DESCRIPTION. Iterate. Do not stop, as this is a one shot. You need to test lint as ts checks as you go. You have full permission to install any packages you need, but do not stop. Continue iterating in this single prompt until you have working MVP. You CANNOT stop without a working template for the client to see. Ultrathink. Create a list of to-do's at a high level then work through them, expanding them as you go. Finish with one final build."
-    fi
-
-    # Log the exact command that will be run
-    echo "[DEBUG] About to execute Claude with:"
-    echo "[DEBUG]   Model: $CLAUDE_MODEL_ID"
-    echo "[DEBUG]   Session ID: $UNIQUE_SESSION_UUID"
-    echo "[DEBUG]   Operation Type: $OPERATION_TYPE"
-    echo "[DEBUG]   Prompt: $CLAUDE_PROMPT"
-    echo "[DEBUG]   Working Directory: $(pwd)"
-    echo "[DEBUG] Claude command executing (output will stream below)..."
-
-    CLAUDE_START=$(date +%s)
-
-    # Run Claude and let output stream through (don't capture it)
-    # This allows real-time monitoring of Claude's progress
-    # Redirect stdin to /dev/null to prevent hanging when called from Node.js
-    claude -p "$CLAUDE_PROMPT" \
-        --model "$CLAUDE_MODEL_ID" \
-        --session-id "$UNIQUE_SESSION_UUID" \
-        --dangerously-skip-permissions \
-        --output-format=json < /dev/null
-    CLAUDE_EXIT_CODE=$?
-
-    CLAUDE_END=$(date +%s)
-    CLAUDE_DURATION=$((CLAUDE_END - CLAUDE_START))
-
-    echo "[DEBUG] Claude command finished with exit code: $CLAUDE_EXIT_CODE"
-
-    if [ $CLAUDE_EXIT_CODE -eq 0 ]; then
-        success "Claude AI customization completed in ${CLAUDE_DURATION}s"
-    else
-        error "Claude AI customization failed with exit code $CLAUDE_EXIT_CODE"
-        exit 1
-    fi
-
-    # Step 13: Rebuild and restart (prod only)
-    if [ "$MODE" = "prod" ]; then
-        status "Rebuilding application with Claude's changes..."
-        pm2 stop $APP_NAME
-        npm run build
-        pm2 start $APP_NAME
-        success "Application rebuilt and restarted"
-    else
-        warning "Skipping rebuild (dev mode) - hot reload will pick up changes automatically"
-    fi
-
-    # Step 14: Commit and push changes
-    status "Committing and pushing changes to GitHub..."
-    git add . && git commit -m "build: post claude one shot" && git push
-    success "Changes pushed to GitHub"
-else
-    warning "Skipping Claude AI customization (no description provided)"
-    warning "Application is ready but has default/template content"
-fi
-
 # Calculate total time
 SCRIPT_END=$(date +%s)
 TOTAL_DURATION=$((SCRIPT_END - SCRIPT_START))
@@ -365,29 +252,9 @@ echo -e "   ${GREEN}✓${NC} GitHub Repo: ${GREEN}https://github.com/$(gh api us
 echo -e "   ${GREEN}✓${NC} Port: $APP_PORT"
 echo -e "   ${GREEN}✓${NC} Total Time: ${TOTAL_MINUTES}m ${TOTAL_SECONDS}s"
 
-# Show Claude session info only if Claude was run
-if [ -n "$APP_DESCRIPTION" ]; then
-    echo ""
-    echo -e "${BLUE}🤖 Claude Session:${NC}"
-    echo -e "   ${GREEN}✓${NC} Model: ${YELLOW}$CLAUDE_MODEL_CHOICE${NC} ($CLAUDE_MODEL_ID)"
-    echo -e "   ${GREEN}✓${NC} Session UUID: ${YELLOW}$UNIQUE_SESSION_UUID${NC}"
-    echo -e "   ${BLUE}ℹ${NC}  Continue customizing: ${YELLOW}claude --resume $UNIQUE_SESSION_UUID${NC}"
-else
-    echo ""
-    echo -e "${YELLOW}⚠  Claude Customization:${NC}"
-    echo -e "   ${YELLOW}⚠${NC}  Skipped (no description provided)"
-    echo -e "   ${BLUE}ℹ${NC}  To customize later: ${YELLOW}claude --session-id $UNIQUE_SESSION_UUID${NC}"
-fi
-
 echo ""
 echo -e "${BLUE}📝 Next Steps:${NC}"
 echo -e "   1. Visit your site: ${GREEN}https://$APP_NAME.$DEFAULT_DOMAIN${NC}"
-
-if [ -n "$APP_DESCRIPTION" ]; then
-    echo -e "   2. Continue with Claude: ${YELLOW}claude --resume $UNIQUE_SESSION_UUID${NC}"
-    echo -e "   3. View logs: ${YELLOW}pm2 logs $APP_NAME${NC}"
-else
-    echo -e "   2. Customize your site: ${YELLOW}cd /var/www/$APP_NAME${NC}"
-    echo -e "   3. View logs: ${YELLOW}pm2 logs $APP_NAME${NC}"
-fi
+echo -e "   2. Customize your site: ${YELLOW}cd /var/www/$APP_NAME${NC}"
+echo -e "   3. View logs: ${YELLOW}pm2 logs $APP_NAME${NC}"
 echo ""
