@@ -127,6 +127,37 @@ if [ "$TEMPLATE" = "new" ]; then
     cd /var/www/
     npx -y create-next-app@latest "$APP_NAME" --ts --tailwind --eslint --app --src-dir --yes
     success "Next.js application created"
+elif [ "$TEMPLATE" = "react" ]; then
+    status "Creating React application with React Router..."
+    cd /var/www/
+    npx -y create-react-router@latest "$APP_NAME"
+    cd "$APP_NAME"
+
+    # Configure Vite to allow all hosts (for reverse proxy)
+    status "Configuring Vite for reverse proxy..."
+    cat > vite.config.ts << EOF
+import { reactRouter } from "@react-router/dev/vite";
+import tailwindcss from "@tailwindcss/vite";
+import { defineConfig } from "vite";
+import tsconfigPaths from "vite-tsconfig-paths";
+
+export default defineConfig({
+  server: {
+    host: true,
+    allowedHosts: [".$DEFAULT_DOMAIN"]
+  },
+  plugins: [tailwindcss(), reactRouter(), tsconfigPaths()],
+});
+EOF
+    success "React application created and configured"
+elif [ "$TEMPLATE" = "saas" ]; then
+    status "Creating SaaS application from GitHub repository..."
+    cd /var/www/
+    git clone https://github.com/NomadNiko/saas-starter "$APP_NAME"
+    cd "$APP_NAME"
+    # Remove the cloned .git directory to start fresh
+    rm -rf .git
+    success "SaaS starter cloned from GitHub"
 else
     status "Creating Next.js application from template: $TEMPLATE"
 
@@ -152,11 +183,42 @@ success "Git repository initialized"
 
 # Step 5: Create .env file
 status "Creating environment configuration..."
-cat > .env << EOF
+
+if [ "$TEMPLATE" = "saas" ]; then
+    # Generate secure AUTH_SECRET
+    AUTH_SECRET=$(openssl rand -hex 32)
+
+    # Read MongoDB URI template from .env and replace placeholder
+    # Use grep to get the raw line without bash variable expansion
+    MONGODB_URI_TEMPLATE=$(grep "^MONGODB_URI=" "$SCRIPT_DIR/.env" | cut -d '=' -f 2-)
+    MONGODB_URI_REPLACED="${MONGODB_URI_TEMPLATE//\{\$APP_NAME\}/$APP_NAME}"
+
+    status "Generating SaaS environment with MongoDB and Stripe integration..."
+    cat > .env << EOF
+APP_NAME=$APP_NAME
+PORT=$APP_PORT
+
+# Base URL
+BASE_URL=https://$APP_NAME.$DEFAULT_DOMAIN
+
+# Authentication Secret (generated securely)
+AUTH_SECRET=$AUTH_SECRET
+
+# MongoDB Connection
+MONGODB_URI=$MONGODB_URI_REPLACED
+
+# Stripe Configuration
+STRIPE_SECRET_KEY=$STRIPE_SECRET_KEY
+STRIPE_WEBHOOK_SECRET=$STRIPE_WEBHOOK_SECRET
+EOF
+    success "SaaS environment configured with MongoDB and Stripe"
+else
+    cat > .env << EOF
 APP_NAME=$APP_NAME
 PORT=$APP_PORT
 EOF
-success "Environment configured"
+    success "Environment configured"
+fi
 
 # Step 6: Install dependencies & create GitHub repo in parallel
 status "Installing dependencies and creating GitHub repo in parallel..."
@@ -206,15 +268,36 @@ else
     success "Nginx configuration prepared"
 fi
 
+# Step 7.5: Seed database for SaaS template
+if [ "$TEMPLATE" = "saas" ]; then
+    status "Seeding database for SaaS template..."
+    npm run db:seed
+    success "Database seeded successfully"
+fi
+
 # Step 8: Start PM2 process
-if [ "$MODE" = "prod" ]; then
-    status "Starting PM2 process (production mode)..."
-    PORT=$APP_PORT pm2 start npm --name "$APP_NAME" -- run start
-    success "Application started on port $APP_PORT (production)"
+if [ "$TEMPLATE" = "react" ]; then
+    # React Router apps: dev mode uses --port flag, prod mode uses PORT env var
+    if [ "$MODE" = "prod" ]; then
+        status "Starting PM2 process (production mode)..."
+        PORT=$APP_PORT pm2 start npm --name "$APP_NAME" -- run start
+        success "Application started on port $APP_PORT (production)"
+    else
+        status "Starting PM2 process (development mode)..."
+        pm2 start npm --name "$APP_NAME" -- run dev -- --port $APP_PORT
+        success "Application started on port $APP_PORT (development with hot reload)"
+    fi
 else
-    status "Starting PM2 process (development mode)..."
-    PORT=$APP_PORT pm2 start npm --name "$APP_NAME" -- run dev
-    success "Application started on port $APP_PORT (development with hot reload)"
+    # Next.js and other apps use PORT env var
+    if [ "$MODE" = "prod" ]; then
+        status "Starting PM2 process (production mode)..."
+        PORT=$APP_PORT pm2 start npm --name "$APP_NAME" -- run start
+        success "Application started on port $APP_PORT (production)"
+    else
+        status "Starting PM2 process (development mode)..."
+        PORT=$APP_PORT pm2 start npm --name "$APP_NAME" -- run dev
+        success "Application started on port $APP_PORT (development with hot reload)"
+    fi
 fi
 
 # Step 9: Test and restart nginx
