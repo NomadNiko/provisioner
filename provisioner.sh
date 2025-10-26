@@ -206,67 +206,39 @@ step_done
 
 section_header "Application Creation"
 
-# Step 3: Create Next.js app
+# Step 3: Create app from template
 step
-if [ "$TEMPLATE" = "new" ]; then
-    status "Creating Next.js application from scratch..."
-    info "Using: TypeScript, Tailwind CSS, ESLint, App Router"
-    cd /var/www/
-    npx -y create-next-app@latest "$APP_NAME" --ts --tailwind --eslint --app --src-dir --yes > /tmp/nextjs-create.log 2>&1
-    success "Next.js application created"
-elif [ "$TEMPLATE" = "react" ]; then
-    status "Creating React application with React Router..."
-    info "Stack: React Router v7, Vite, TypeScript"
-    cd /var/www/
-    npx -y create-react-router@latest "$APP_NAME" > /tmp/react-create.log 2>&1
-    cd "$APP_NAME"
+status "Creating application from template: $TEMPLATE"
 
-    # Configure Vite to allow all hosts (for reverse proxy)
-    status "Configuring Vite for reverse proxy..."
-    cat > vite.config.ts << EOF
-import { reactRouter } from "@react-router/dev/vite";
-import tailwindcss from "@tailwindcss/vite";
-import { defineConfig } from "vite";
-import tsconfigPaths from "vite-tsconfig-paths";
-
-export default defineConfig({
-  server: {
-    host: true,
-    allowedHosts: [".$DEFAULT_DOMAIN"]
-  },
-  plugins: [tailwindcss(), reactRouter(), tsconfigPaths()],
-});
-EOF
-    success "React application created and configured"
-    info "Vite configured for domain: .$DEFAULT_DOMAIN"
-elif [ "$TEMPLATE" = "saas" ]; then
-    status "Creating SaaS application from GitHub repository..."
-    info "Source: github.com/NomadNiko/saas-starter"
-    cd /var/www/
-    git clone https://github.com/NomadNiko/saas-starter "$APP_NAME" > /tmp/saas-clone.log 2>&1
-    cd "$APP_NAME"
-    # Remove the cloned .git directory to start fresh
-    rm -rf .git
-    success "SaaS starter cloned from GitHub"
-    info "MongoDB and Stripe integration included"
-else
-    status "Creating Next.js application from template: $TEMPLATE"
-
-    # Check if template exists
-    if [ ! -d "$SCRIPT_DIR/templates/$TEMPLATE" ]; then
-        error "Template '$TEMPLATE' not found in $SCRIPT_DIR/templates/"
-        echo ""
-        echo -e "${YELLOW}Available templates:${NC}"
-        ls -1 "$SCRIPT_DIR/templates/" | sed 's/^/  - /'
-        exit 1
-    fi
-
-    info "Template location: $SCRIPT_DIR/templates/$TEMPLATE"
-    # Copy template to destination
-    cp -r "$SCRIPT_DIR/templates/$TEMPLATE" "/var/www/$APP_NAME"
-    cd "/var/www/$APP_NAME"
-    success "Next.js application created from template: $TEMPLATE"
+# Check if template exists
+if [ ! -d "$SCRIPT_DIR/templates/$TEMPLATE" ]; then
+    error "Template '$TEMPLATE' not found in $SCRIPT_DIR/templates/"
+    echo ""
+    echo -e "${YELLOW}Available templates:${NC}"
+    ls -1 "$SCRIPT_DIR/templates/" | sed 's/^/  - /'
+    exit 1
 fi
+
+info "Template location: $SCRIPT_DIR/templates/$TEMPLATE"
+# Copy template to destination
+cp -r "$SCRIPT_DIR/templates/$TEMPLATE" "/var/www/$APP_NAME"
+cd "/var/www/$APP_NAME"
+
+# Update package.json name to match app name
+if [ -f "package.json" ]; then
+    status "Updating package.json with app name..."
+    sed -i "s/\"name\": \".*\"/\"name\": \"$APP_NAME\"/" package.json
+    success "Package name updated to: $APP_NAME"
+fi
+
+# Update vite.config.ts for React templates (replace domain placeholder)
+if [ -f "vite.config.ts" ]; then
+    status "Configuring Vite for reverse proxy..."
+    sed -i "s/DOMAIN_PLACEHOLDER/$DEFAULT_DOMAIN/g" vite.config.ts
+    success "Vite configured for domain: .$DEFAULT_DOMAIN"
+fi
+
+success "Application created from template: $TEMPLATE"
 step_done
 
 # Step 4: Initialize Git
@@ -330,27 +302,59 @@ section_header "Dependency Installation & GitHub Setup"
 
 # Step 6: Install dependencies & create GitHub repo in parallel
 step
-status "Running parallel operations..."
-info "Task 1: Installing npm dependencies"
-info "Task 2: Creating GitHub repository"
-echo ""
 
-npm install > /tmp/npm-install.log 2>&1 &
-NPM_PID=$!
+# Check if template has dependencies pre-installed
+HAS_NODE_MODULES=false
+if [ -d "node_modules" ]; then
+    HAS_NODE_MODULES=true
+fi
 
-gh repo create "$APP_NAME" --public --source=. --remote=origin --push > /tmp/gh-create.log 2>&1 &
-GH_PID=$!
+# Check if template has production build pre-built
+IS_PREBUILT=false
+if [ "$HAS_NODE_MODULES" = true ] && ([ -d ".next" ] || [ -d "build" ]); then
+    IS_PREBUILT=true
+fi
 
-# Wait for npm install
-wait $NPM_PID
-success "Dependencies installed"
-info "Packages installed from package.json"
+if [ "$HAS_NODE_MODULES" = true ]; then
+    status "Using pre-installed dependencies..."
+    info "Skipping npm install (node_modules already included)"
+    info "Creating GitHub repository"
+    echo ""
 
-# Wait for GitHub
-wait $GH_PID
-success "GitHub repository created"
-GH_USER=$(gh api user --jq .login 2>/dev/null || echo "your-username")
-info "Repository: github.com/$GH_USER/$APP_NAME"
+    gh repo create "$APP_NAME" --public --source=. --remote=origin --push > /tmp/gh-create.log 2>&1 &
+    GH_PID=$!
+
+    success "Dependencies ready"
+    info "Template includes pre-installed node_modules"
+
+    # Wait for GitHub
+    wait $GH_PID
+    success "GitHub repository created"
+    GH_USER=$(gh api user --jq .login 2>/dev/null || echo "your-username")
+    info "Repository: github.com/$GH_USER/$APP_NAME"
+else
+    status "Running parallel operations..."
+    info "Task 1: Installing npm dependencies"
+    info "Task 2: Creating GitHub repository"
+    echo ""
+
+    npm install > /tmp/npm-install.log 2>&1 &
+    NPM_PID=$!
+
+    gh repo create "$APP_NAME" --public --source=. --remote=origin --push > /tmp/gh-create.log 2>&1 &
+    GH_PID=$!
+
+    # Wait for npm install
+    wait $NPM_PID
+    success "Dependencies installed"
+    info "Packages installed from package.json"
+
+    # Wait for GitHub
+    wait $GH_PID
+    success "GitHub repository created"
+    GH_USER=$(gh api user --jq .login 2>/dev/null || echo "your-username")
+    info "Repository: github.com/$GH_USER/$APP_NAME"
+fi
 step_done
 
 section_header "Build & Server Configuration"
@@ -358,31 +362,57 @@ section_header "Build & Server Configuration"
 # Step 7: Build the application (prod only) and prepare nginx in parallel
 step
 if [ "$MODE" = "prod" ]; then
-    status "Building application for production..."
-    info "This may take 30-60 seconds depending on project size"
-    echo ""
+    if [ "$IS_PREBUILT" = true ]; then
+        status "Using pre-built production build..."
+        info "Skipping npm run build (already built)"
 
-    npm run build > /tmp/npm-build.log 2>&1 &
-    BUILD_PID=$!
+        # Verify build exists (.next for Next.js, build/ for React)
+        if [ -f ".next/BUILD_ID" ]; then
+            success "Production build verified (Next.js)"
+            info "Build ID: $(cat .next/BUILD_ID)"
+        elif [ -d "build" ]; then
+            success "Production build verified (React)"
+            info "Build directory: build/"
+        else
+            error "Pre-built template missing build artifacts"
+            exit 1
+        fi
 
-    # Nginx config (backgrounded)
-    (
+        # Nginx config
         sudo cp "$SCRIPT_DIR/base.config" /etc/nginx/sites-enabled/"$APP_NAME".$DEFAULT_DOMAIN
         sudo sed -i "s/{appName}/$APP_NAME/g" /etc/nginx/sites-enabled/"$APP_NAME".$DEFAULT_DOMAIN
         sudo sed -i "s/{appPort}/$APP_PORT/g" /etc/nginx/sites-enabled/"$APP_NAME".$DEFAULT_DOMAIN
         sudo sed -i "s/{SERVER_PUBLIC_IP}/$SERVER_PUBLIC_IP/g" /etc/nginx/sites-enabled/"$APP_NAME".$DEFAULT_DOMAIN
-    ) &
-    NGINX_PID=$!
 
-    # Wait for nginx config
-    wait $NGINX_PID
-    success "Nginx configuration prepared"
-    info "Config: /etc/nginx/sites-enabled/$APP_NAME.$DEFAULT_DOMAIN"
+        success "Nginx configuration prepared"
+        info "Config: /etc/nginx/sites-enabled/$APP_NAME.$DEFAULT_DOMAIN"
+    else
+        status "Building application for production..."
+        info "This may take 30-60 seconds depending on project size"
+        echo ""
 
-    # Wait for build
-    wait $BUILD_PID
-    success "Production build completed"
-    info "Build optimized for performance"
+        npm run build > /tmp/npm-build.log 2>&1 &
+        BUILD_PID=$!
+
+        # Nginx config (backgrounded)
+        (
+            sudo cp "$SCRIPT_DIR/base.config" /etc/nginx/sites-enabled/"$APP_NAME".$DEFAULT_DOMAIN
+            sudo sed -i "s/{appName}/$APP_NAME/g" /etc/nginx/sites-enabled/"$APP_NAME".$DEFAULT_DOMAIN
+            sudo sed -i "s/{appPort}/$APP_PORT/g" /etc/nginx/sites-enabled/"$APP_NAME".$DEFAULT_DOMAIN
+            sudo sed -i "s/{SERVER_PUBLIC_IP}/$SERVER_PUBLIC_IP/g" /etc/nginx/sites-enabled/"$APP_NAME".$DEFAULT_DOMAIN
+        ) &
+        NGINX_PID=$!
+
+        # Wait for nginx config
+        wait $NGINX_PID
+        success "Nginx configuration prepared"
+        info "Config: /etc/nginx/sites-enabled/$APP_NAME.$DEFAULT_DOMAIN"
+
+        # Wait for build
+        wait $BUILD_PID
+        success "Production build completed"
+        info "Build optimized for performance"
+    fi
 else
     status "Development mode - skipping production build"
     info "Hot reload will be enabled"

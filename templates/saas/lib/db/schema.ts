@@ -1,0 +1,22 @@
+// Re-export MongoDB schemas for backwards compatibility
+export {
+  User,
+  Team,
+  ActivityLog,
+  Invitation,
+  UserRole,
+  InvitationStatus,
+  SubscriptionStatus,
+  ActivityType,
+  type IUser,
+  type ITeam,
+  type IActivityLog,
+  type IInvitation,
+  type ITeamMemberEmbedded,
+  type UserDocument,
+  type TeamDocument,
+  type ActivityLogDocument,
+  type InvitationDocument,
+  type TeamMemberEmbedded,
+  type TeamDataWithMembers,
+} from './mongodb/schema';
